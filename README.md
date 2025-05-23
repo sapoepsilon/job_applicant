@@ -52,6 +52,26 @@ An intelligent browser automation tool that combines Playwright MCP (Model Conte
 
 ### Main Job Application Script
 
+#### Hiring Cafe Scraper
+
+Scrape jobs from Hiring Cafe:
+
+```bash
+python hiring_cafe_scraper.py "job name" 10
+```
+
+the first argument is the job name and the second argument is the number of jobs to scrape
+
+#### Resume Tailoring
+
+Customize your resume for specific job postings:
+
+```bash
+python resume_tailor.py --csv-path ios_developer_jobs.csv --limit 10
+```
+
+the first argument is the path to the csv file and the second argument is the number of jobs to process
+
 The primary script that uses Playwright MCP with Gemini for job automation:
 
 ```bash
@@ -101,28 +121,12 @@ python langchain_browser_use.py --model gemini-2.0-flash-exp --planner-model gem
 
 ### Additional Tools
 
-#### Resume Tailoring
-
-Customize your resume for specific job postings:
-
-```bash
-python resume_tailor.py
-```
-
 #### Job Extraction
 
 Extract job listings from websites:
 
 ```bash
 python job_extractor.py
-```
-
-#### Hiring Cafe Scraper
-
-Scrape jobs from Hiring Cafe:
-
-```bash
-python hiring_cafe_scraper.py
 ```
 
 ## Example Commands
