@@ -1,0 +1,44 @@
+.env
+
+# Virtual Environments
+venv/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Ignore resumes and csv files
+*.csv
+*.tex
+*.pdf
+*.docx
+*.md
+*.txt
+.mcp.json
