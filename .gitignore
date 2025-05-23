@@ -39,6 +39,8 @@ build/
 *.tex
 *.pdf
 *.docx
-*.md
 *.txt
 .mcp.json
+
+# But allow README
+!README.md
