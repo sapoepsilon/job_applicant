@@ -678,9 +678,9 @@ Return ONLY the fixed LaTeX code without any explanations or markdown formatting
                 saved_path = self.save_latex_resume(tailored_resume, job)
                 if saved_path:
                     print(f"✓ Created tailored resume: {saved_path}")
-                    # Update CSV to mark this job as having a resume created and add PDF path
-                    self.update_csv_resume_status(csv_path, job, True, saved_path)
-                    print("✓ Updated CSV with resume status and PDF path")
+                    # Update CSV to mark this job as having a resume created
+                    self.update_csv_resume_status(csv_path, job, True)
+                    print("✓ Updated CSV with resume status")
                 else:
                     print("✗ Failed to save resume")
             else:

@@ -15,6 +15,7 @@ An intelligent browser automation tool that combines Playwright MCP (Model Conte
 - Python 3.8+
 - Node.js and npm
 - Google Gemini API key
+- LaTeX distribution (e.g., MacTeX, TeX Live) - Required for PDF generation in resume_tailor.py
 
 ## Installation
 
@@ -67,10 +68,15 @@ the first argument is the job name and the second argument is the number of jobs
 Customize your resume for specific job postings:
 
 ```bash
-python resume_tailor.py --csv-path ios_developer_jobs.csv --limit 10
+python resume_tailor.py --csv-path ios_developer_jobs.csv --limit 10 --resumes-dir /path/to/your/resumes
 ```
 
-the first argument is the path to the csv file and the second argument is the number of jobs to process
+Arguments:
+- `--csv-path`: Path to the CSV file containing job listings
+- `--limit`: Number of jobs to process
+- `--resumes-dir`: Path to directory containing existing resumes (default: `/Users/ismatullamansurov/Documents/Latex Resumes`)
+
+**Note**: This script requires a LaTeX distribution (pdflatex) to be installed for PDF generation. If pdflatex is not found, you'll see an error message directing you to install LaTeX (e.g., MacTeX for macOS, TeX Live for Linux).
 
 The primary script that uses Playwright MCP with Gemini for job automation:
 
