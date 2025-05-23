@@ -19,12 +19,14 @@ An intelligent browser automation tool that combines Playwright MCP (Model Conte
 ## Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/sapoepsilon/job_applicant.git
    cd job_applicant
    ```
 
 2. **Create and activate virtual environment**
+
    ```bash
    python -m venv venv
    source venv/bin/activate  # On macOS/Linux
@@ -32,17 +34,12 @@ An intelligent browser automation tool that combines Playwright MCP (Model Conte
    ```
 
 3. **Install Python dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Install MCP packages**
-   ```bash
-   npm install -g @playwright/mcp
-   npm install -g @wonderwhy-er/desktop-commander
-   ```
-
-5. **Set up environment variables**
+4. **Set up environment variables**
    ```bash
    cp .env.example .env
    ```
@@ -62,6 +59,7 @@ python job_applicant.py
 ```
 
 This will:
+
 1. Open a browser window
 2. Navigate to job sites based on your instructions
 3. Fill out applications automatically
@@ -70,22 +68,26 @@ This will:
 ### Alternative Implementations
 
 #### LangChain with Multiple MCP Servers
+
 ```bash
 python langchain_mcp.py
 ```
 
 This version includes additional MCP servers for:
+
 - File system operations
 - PostgreSQL database access
 - Terminal control
 - Todo list management
 
 #### Browser-Use with Planning
+
 ```bash
 python langchain_browser_use.py
 ```
 
 Command-line options:
+
 ```bash
 # Start with a specific URL
 python langchain_browser_use.py --url https://linkedin.com/jobs --query "Apply to software engineer positions"
@@ -100,19 +102,25 @@ python langchain_browser_use.py --model gemini-2.0-flash-exp --planner-model gem
 ### Additional Tools
 
 #### Resume Tailoring
+
 Customize your resume for specific job postings:
+
 ```bash
 python resume_tailor.py
 ```
 
 #### Job Extraction
+
 Extract job listings from websites:
+
 ```bash
 python job_extractor.py
 ```
 
 #### Hiring Cafe Scraper
+
 Scrape jobs from Hiring Cafe:
+
 ```bash
 python hiring_cafe_scraper.py
 ```
@@ -152,14 +160,17 @@ job_applicant/
 ## Troubleshooting
 
 ### Browser won't open
+
 - Ensure Playwright is properly installed: `npx playwright install chromium`
 - Check if MCP server is running: `npm list -g @playwright/mcp`
 
 ### API errors
+
 - Verify your Gemini API key is set correctly in `.env`
 - Check API quota limits at [Google AI Studio](https://aistudio.google.com/)
 
 ### Connection issues
+
 - Ensure all MCP servers are installed globally with npm
 - Try restarting the script if connection times out
 
@@ -203,6 +214,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 For issues and questions:
+
 - Open an issue on [GitHub](https://github.com/sapoepsilon/job_applicant/issues)
 - Check existing issues for solutions
 - Ensure you've followed all installation steps
