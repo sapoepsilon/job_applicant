@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 import json
 import re
 from datetime import datetime
+import time
 
 # Load environment variables
 load_dotenv()
@@ -43,7 +44,9 @@ class ResumeTailor:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
         
         self.client = genai.Client(api_key=api_key)
-        self.model = 'gemini-2.5-flash-preview-05-20'
+        # self.model = 'gemini-2.5-flash-preview-05-20'
+        self.model = 'gemini-2.5-pro-preview-05-06'
+        self.last_error = None  # Track last error for reporting
         
     def read_csv(self, csv_path: str) -> List[Dict[str, Any]]:
         """Read job data from CSV file."""
@@ -86,12 +89,20 @@ class ResumeTailor:
                     if 'resume_pdf_path' not in row:
                         row['resume_pdf_path'] = ''
                     
-                    # Update the matching job
-                    if (row.get('job_title') == job_data.get('job_title') and 
-                        row.get('company') == job_data.get('company')):
+                    # Update the matching job - use more robust matching
+                    job_title_match = str(row.get('job_title', '')).strip() == str(job_data.get('job_title', '')).strip()
+                    company_match = str(row.get('company', '')).strip() == str(job_data.get('company', '')).strip()
+                    
+                    # Also check external_url as a secondary match criterion
+                    external_url_match = False
+                    if 'external_url' in row and 'external_url' in job_data:
+                        external_url_match = str(row.get('external_url', '')).strip() == str(job_data.get('external_url', '')).strip()
+                    
+                    if (job_title_match and company_match) or (external_url_match and external_url_match != ''):
                         row['is_resume_created'] = 'true' if resume_created else 'false'
                         if resume_pdf_path:
                             row['resume_pdf_path'] = resume_pdf_path
+                            print(f"  → Updated resume_pdf_path for {job_data.get('job_title')} at {job_data.get('company')}")
                     
                     rows.append(row)
             
@@ -158,10 +169,10 @@ class ResumeTailor:
         job_title = job_data.get('job_title', 'Unknown Position')
         company = job_data.get('company', 'Unknown Company')
         job_description = job_data.get('job_description', '')
-        resumes_text = "\n\n=== RESUME SEPARATOR ===\n\n".join([
-            f"Resume: {resume['filename']}\n{resume['content']}" 
-            for resume in resumes
-        ])
+        # Note: Currently reading from fixed files instead of using the resumes parameter
+        # This allows for a consistent resume format from resume.md and latex_resume.md
+        resumes_text = Path('resume.md').read_text() 
+        latex_resume_example = Path('latex_resume.md').read_text()
         
         prompt = f"""
 You are an expert resume writer specializing in creating highly targeted, chronologically
@@ -173,8 +184,9 @@ COMPANY: {company}
 JOB DESCRIPTION:
 {job_description}
 
-EXISTING RESUMES:
+EXISTING experiences:
 {resumes_text}
+
 
 EXPANSION TECHNIQUES:
 - Add specific numbers/metrics (%, time saved, user count, data volume)
@@ -306,17 +318,57 @@ FINAL REMINDER BEFORE YOU OUTPUT:
 - Only output when EVERY bullet is either 90-100 or 180-190 characters
 - Remember: 90-100 character bullets are STRONGLY PREFERRED
 - This is NON-NEGOTIABLE
+
+I have an example of my latex in an md file. Please use it as a reference.
+{latex_resume_example}
 """
 
-        try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt
-            )
-            return response.text
-        except Exception as e:
-            print(f"Error generating tailored resume: {e}")
-            return ""
+        max_retries = 3
+        retry_count = 0
+        base_wait_time = 60  # Start with 60 seconds
+        
+        while retry_count < max_retries:
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
+                return response.text
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        # Extract retry delay from error if available
+                        retry_delay = base_wait_time
+                        if "retryDelay" in error_str:
+                            # Try to extract the delay value
+                            import re
+                            delay_match = re.search(r"retryDelay.*?(\d+)s", error_str)
+                            if delay_match:
+                                retry_delay = int(delay_match.group(1))
+                        
+                        wait_time = retry_delay * retry_count  # Exponential backoff
+                        print(f"\n⏳ Rate limit hit. Waiting {wait_time} seconds before retry {retry_count}/{max_retries}...")
+                        print(f"   (Error: API quota exceeded)")
+                        
+                        # Show countdown
+                        for i in range(wait_time, 0, -10):
+                            print(f"   Resuming in {i} seconds...", end='\r')
+                            time.sleep(min(10, i))
+                        print()  # Clear the line
+                        
+                        continue
+                    else:
+                        print(f"\n❌ Rate limit error persists after {max_retries} retries")
+                        print("   Consider waiting longer or checking your API quota")
+                        return ""
+                else:
+                    print(f"Error generating tailored resume: {e}")
+                    self.last_error = str(e)
+                    return ""
+        
+        return ""
     
     def clean_markdown_from_latex(self, latex_content: str) -> str:
         """Remove markdown code fences and other markdown artifacts from LaTeX content."""
@@ -473,16 +525,30 @@ Please fix the LaTeX code to make it compile successfully. Common issues include
 Return ONLY the fixed LaTeX code without any explanations or markdown formatting.
 """
         
-        try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt
-            )
-            fixed_content = self.clean_markdown_from_latex(response.text)
-            return fixed_content
-        except Exception as e:
-            print(f"Error using Gemini to fix LaTeX: {e}")
-            return ""
+        max_retries = 2  # Fewer retries for fixing LaTeX
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
+                fixed_content = self.clean_markdown_from_latex(response.text)
+                return fixed_content
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        wait_time = 30 * retry_count  # Shorter wait for LaTeX fixes
+                        print(f"   Rate limit hit during LaTeX fix. Waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                print(f"Error using Gemini to fix LaTeX: {e}")
+                return ""
+        
+        return ""
     
     def cleanup_latex_logs(self, base_filename: str):
         """Clean up LaTeX auxiliary files including logs."""
@@ -662,6 +728,11 @@ Return ONLY the fixed LaTeX code without any explanations or markdown formatting
             jobs_to_process = jobs_to_process[:limit]
             print(f"Processing first {limit} jobs from {len(jobs_to_process)} remaining jobs")
         
+        # Track progress
+        successful_resumes = 0
+        failed_resumes = 0
+        rate_limit_delays = 0
+        
         # Process each job
         for i, job in enumerate(jobs_to_process, 1):
             print(f"\nProcessing job {i}/{len(jobs_to_process)}: "
@@ -670,6 +741,7 @@ Return ONLY the fixed LaTeX code without any explanations or markdown formatting
             # Skip if no job description
             if not job.get('job_description'):
                 print("Skipping job with no description")
+                failed_resumes += 1
                 continue
             
             # Create tailored LaTeX resume
@@ -679,12 +751,33 @@ Return ONLY the fixed LaTeX code without any explanations or markdown formatting
                 if saved_path:
                     print(f"✓ Created tailored resume: {saved_path}")
                     # Update CSV to mark this job as having a resume created
-                    self.update_csv_resume_status(csv_path, job, True)
-                    print("✓ Updated CSV with resume status")
+                    # If it's a PDF path (not just LaTeX), include it in the update
+                    if saved_path.endswith('.pdf'):
+                        self.update_csv_resume_status(csv_path, job, True, saved_path)
+                    else:
+                        self.update_csv_resume_status(csv_path, job, True)
+                    print("✓ Updated CSV with resume status and PDF path")
+                    successful_resumes += 1
                 else:
                     print("✗ Failed to save resume")
+                    failed_resumes += 1
             else:
                 print("✗ Failed to generate tailored resume")
+                failed_resumes += 1
+                # Check if it was a rate limit issue
+                if "exceeded your current quota" in str(self.last_error):
+                    rate_limit_delays += 1
+        
+        # Print summary
+        print(f"\n{'='*60}")
+        print(f"📊 Resume Tailoring Summary:")
+        print(f"   ✅ Successful: {successful_resumes}")
+        print(f"   ❌ Failed: {failed_resumes}")
+        if rate_limit_delays > 0:
+            print(f"   ⏳ Rate limit delays: {rate_limit_delays}")
+            print(f"\n💡 Tip: If you hit rate limits, wait a few minutes and run again.")
+            print(f"   The script will skip jobs that already have resumes.")
+        print(f"{'='*60}")
 
 def main():
     parser = argparse.ArgumentParser(

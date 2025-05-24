@@ -3,13 +3,23 @@ from playwright.sync_api import sync_playwright
 from datetime import datetime
 from job_extractor import save_job_to_csv, parse_job_details, check_job_already_scraped, check_job_already_scraped_by_url, extract_job_preview_info
 
+# Force unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+
 def main():
     search_text = sys.argv[1] if len(sys.argv) > 1 else ""
     max_jobs = int(sys.argv[2]) if len(sys.argv) > 2 else None  # Optional job limit
     
+    print("🚀 Starting browser automation...")
+    sys.stdout.flush()
+    
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        
+        print("📡 Navigating to hiring.cafe...")
+        sys.stdout.flush()
+        
         page.goto("https://hiring.cafe")
  
         if search_text:
@@ -17,6 +27,7 @@ def main():
             page.type("#query-search-v4", search_text, delay=100)  # 100ms delay between keystrokes
             page.press("#query-search-v4", "Enter")
             print(f"Entered search text: {search_text}")
+            sys.stdout.flush()
             page.wait_for_selector("button:has-text('Relevance')")
             relevance_button = page.locator("button:has-text('Relevance')")
             if relevance_button.is_visible():
@@ -123,6 +134,7 @@ def main():
                             job_data['extracted_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             
                             print(f"✅ Extracted job data: {job_title} at {company_name}")
+                            sys.stdout.flush()
                             
                         except Exception as e:
                             print(f"Error extracting basic job details: {e}")
@@ -252,13 +264,15 @@ def main():
                                 save_job_to_csv(job_data, search_text)
                                 jobs_scraped_this_session += 1
                                 print(f"Job {index + 1} data saved to CSV! (Total scraped: {jobs_scraped_this_session})")
+                                sys.stdout.flush()
                         elif job_data:
                             save_job_to_csv(job_data, search_text)
                             jobs_scraped_this_session += 1
                             print(f"Job {index + 1} data saved to CSV (no external URL)! (Total scraped: {jobs_scraped_this_session})")
+                            sys.stdout.flush()
                         
                         try:
-                            close_button = page.locator("div.flex.items-center.space-x-2 > button.rounded-lg.p-2.text-black.hover\:bg-gray-200.flex-none.outline-none").first
+                            close_button = page.locator("div.flex.items-center.space-x-2 > button.rounded-lg.p-2.text-black.hover\\:bg-gray-200.flex-none.outline-none").first
                             if close_button.is_visible():
                                 close_button.click()
                                 print("Clicked close button to return to search results")
@@ -351,14 +365,17 @@ def main():
                     print(f"❌ Error scrolling: {scroll_error}")
                     break
             
-            print(f"\n🎉 Completed processing all job listings! Total processed: {processed_jobs}")
+            print(f"\n🎉 Completed processing all job listings!")
+            print(f"📊 Total jobs processed: {processed_jobs}")
+            print(f"✅ Total jobs saved to CSV: {jobs_scraped_this_session}")
         
-        # Keep browser open
-        try:
-            input("Press Enter to close browser...")
-        except EOFError:
-            # Wait 5 seconds if no input available
-            page.wait_for_timeout(5000)
+        # Don't keep browser open when run from command center
+        # Only wait for input if running standalone
+        if sys.stdout.isatty():
+            try:
+                input("Press Enter to close browser...")
+            except EOFError:
+                pass
         
         browser.close()
 
