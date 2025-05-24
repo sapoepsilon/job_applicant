@@ -40,6 +40,7 @@ build/
 *.pdf
 *.docx
 .mcp.json
+resume.md
 
 # But allow README
 !README.md
