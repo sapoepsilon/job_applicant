@@ -42,6 +42,7 @@ build/
 .mcp.json
 resume.md
 config.py
+tailored_resumes_markdown
 
 # But allow README
 !README.md
