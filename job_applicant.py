@@ -11,36 +11,22 @@ from urllib.parse import urlparse
 from datetime import datetime
 import base64
 
+from config import PlaywrightConfig, TerminalConfig, CREDENTIALS_FILE
+
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Credential management constants
-CREDENTIALS_FILE = "/Users/ismatullamansurov/Developer/job_applicant/job_credentials.csv"
-
-# Create server parameters for stdio connection
+# Create server parameters for stdio connections
 browser_use_params = StdioServerParameters(
-    command="npx",  # Executable
-    args=["-y", "@playwright/mcp@latest","--no-sandbox","--user-data-dir=/Users/ismatullamansurov/Library/Caches/ms-playwright/chromium-1148"],
+    command="npx",
+    args=PlaywrightConfig.get_mcp_args(),
     env=None,
 )
 
 terminal_params = StdioServerParameters(
-    command="npx",  # Executable
-    args=["-y", "@wonderwhy-er/desktop-commander@latest"],  # Terminal controller MCP
-    env=None,
+    command=TerminalConfig.COMMAND,
+    args=TerminalConfig.ARGS,
+    env=TerminalConfig.ENV,
 )
-
-# browser_use_params = StdioServerParameters(
-#     command="uvx",  # Executable
-#     args=["mcp-server-browser-use@latest"],  # Terminal controller MCP
-#     env={
-#         "MCP_LLM_GOOGLE_API_KEY": os.getenv("GEMINI_API_KEY"),
-#         "MCP_LLM_PROVIDER": "google",
-#         "MCP_LLM_MODEL_NAME": "gemini-2.5-flash-preview-04-17",
-#         "MCP_BROWSER_HEADLESS": "false",
-#         "MCP_AGENT_TOOL_USE_VISION": "true",
-#         "MCP_AVAILABLE_PATHS": "/Users/ismatullamansurov/Developer",
-#     },
-# )
 
 gmail_use_params = StdioServerParameters(
     command="npx",  # Executable
@@ -150,8 +136,25 @@ def get_credentials(url):
     
     return None, None
 
-def find_matching_resume(job_title, company, resume_dir="/Users/ismatullamansurov/Developer/job_applicant/tailored_resumes_pdf"):
-    """Find the matching tailored resume PDF for a job."""
+def find_matching_resume(job_title, company, resume_dir=None):
+    """Find the matching tailored resume PDF for a job.
+    
+    Args:
+        job_title (str): The job title to match against resume filenames
+        company (str): The company name to match against resume filenames
+        resume_dir (str, optional): Custom directory to search for resumes. 
+                                 Defaults to config.TAILORED_RESUMES_PDF
+    
+    Returns:
+        str: Path to the matching resume PDF, or None if not found
+    """
+    if resume_dir is None:
+        from config import TAILORED_RESUMES_PDF
+        resume_dir = TAILORED_RESUMES_PDF
+    
+    # Ensure the directory exists
+    os.makedirs(resume_dir, exist_ok=True)
+    
     # Clean job title and company name for matching
     clean_title = re.sub(r'[^\w\s]', '', job_title).strip()
     clean_company = re.sub(r'[^\w\s]', '', company).strip()
@@ -218,31 +221,21 @@ EXISTING CREDENTIALS FOUND:
 - Password: {existing_password}
 - Use these credentials to log in instead of creating a new account"""
     else:
+        from config import PersonalInfo
         print(f"🆕 No existing credentials found for {extract_domain(external_url)}")
         credential_info = f"""
 NO EXISTING CREDENTIALS:
-- Create a new account using email: ismatulla@mansurov.dev
+- Create a new account using email: {PersonalInfo.ACCOUNT_EMAIL}
 - Generate a secure random password (at least 12 characters with mixed case, numbers, and symbols)
 - IMPORTANT: After successfully creating the account, remember the password you used so we can save it"""
     
-    prompt = f"""You are an automated job application assistant with two integrated tools: a browser automation system and a terminal access system. 
+    # Import at the top level if not already imported
+    from config import PersonalInfo
+    
+    prompt = f"""
+You are an AI assistant helping with job applications. Here are the details you need to know:
 
-CAPABILITIES:
-- Browser automation: Navigate websites, fill forms, upload files, interact with web elements
-- Terminal access: Create, edit, and manage files on the local system
-
-PERSONAL INFORMATION:
-- Name: Ismatulla Mansurov
-- Email: ismatulla@mansurov.dev
-- Race/Ethnicity: White
-- phone: 8016350784
-- LinkedIn: https://www.linkedin.com/in/ismatulla-mansurov/
-- GitHub: https://github.com/sapoepsilon
-- I am not disabled
-- I am not a veteran
-- Location: Salt Lake City, Utah, United States or any other variation of it. Sometimes the field has auto suggest just choose the one that is closest to Salt Lake City, Utah, United States
-- I am willing to relocate
-- preferred name: Izzy
+{PersonalInfo.get_formatted_info()}
 - Resume Location: '{resume_path}'
 
 {credential_info}
@@ -253,18 +246,13 @@ TASK: Apply to {job_title} Position at {company}
 2. Complete the job application process:
    - First check if you need to log in or create an account
    - If logging in, use the existing credentials provided above
-   - If creating a new account, use the email and generate a secure password
-   - Fill out all required personal information fields
-   - Upload the specified resume file
-   - Go one by one and try to fill out the form
-   - If the input has been filled out correctly, move to the next input
-   - if the input has values already just go to the next input
-   - Answer any application questions using the provided personal information
-   - Handle race/ethnicity questions by selecting "White"
-   - Use professional, enthusiastic responses for any text fields
-   - I would need a sponsorship in the future, but for now I am authorized to work in the US
-   - I am on OPT
-   - I am authorized to work in the US
+   - If creating a new account, use email: {PersonalInfo.ACCOUNT_EMAIL}
+   - Fill in all required fields with the personal information provided above
+   - Upload the resume from: {resume_path}
+   - Answer any additional questions truthfully based on the information provided
+   - For work authorization questions: {PersonalInfo.get_work_authorization_statement()}
+   - If asked about visa sponsorship: {'Will need sponsorship in the future' if PersonalInfo.NEEDS_SPONSORSHIP else 'Not required'}
+   - Submit the application
 
 3. Important Application Guidelines:
    - Take screenshots at key steps to document progress
@@ -345,7 +333,8 @@ Approach this task step-by-step. When you receive confirmation of successful sub
                     
                     # Save credentials if a new account was created
                     if new_password and not existing_username:
-                        save_credentials(external_url, "ismatulla@mansurov.dev", new_password)
+                        from config import PersonalInfo
+                        save_credentials(external_url, PersonalInfo.ACCOUNT_EMAIL, new_password)
                     
                     return True, confirmation_details
                 # Add debug information about what we're seeing

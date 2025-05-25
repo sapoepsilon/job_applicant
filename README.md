@@ -49,6 +49,106 @@ An intelligent browser automation tool that combines Playwright MCP (Model Conte
 
    Edit `.env` and add your Gemini API key:
 
+## Configuration
+
+The application uses a `config.py` file for all configuration. To get started:
+
+1. Copy the example configuration file:
+   ```bash
+   cp example.config.py config.py
+   ```
+
+2. Edit `config.py` with your personal information and preferences.
+
+### Configuration Sections
+
+1. **Personal Information**
+   - Update your name, contact details, and professional profiles
+   - Set your work authorization and visa status
+   - Configure location and relocation preferences
+
+2. **Playwright Settings**
+   - Configure browser behavior (Chrome, Firefox, etc.)
+   - Set up proxy and network settings if needed
+   - Configure output directories for screenshots and traces
+
+3. **Terminal Settings**
+   - Configure terminal command execution if needed
+
+### Security Note
+
+The `config.py` file is included in `.gitignore` by default as it contains sensitive information. Never commit your actual `config.py` to version control.
+
+For a complete reference of all available configuration options, see `example.config.py`.
+
+## Usage
+
+The application uses `config.py` for all configuration settings. Here are the main configuration options:
+
+### Playwright MCP Configuration
+
+All browser automation settings can be configured in `config.py` through the `PlaywrightConfig` class:
+
+```python
+class PlaywrightConfig:
+    # Browser selection ("chromium", "firefox", "webkit", "msedge")
+    BROWSER: str = "chromium"
+    
+    # Browser window settings
+    HEADLESS: bool = False
+    DEVICE: Optional[str] = None  # e.g., "iPhone 15"
+    VIEWPORT_SIZE: Optional[str] = None  # e.g., "1280,720"
+    USER_AGENT: Optional[str] = None
+    
+    # User data and profiles
+    USER_DATA_DIR: Optional[str] = "~/Library/Caches/ms-playwright/chromium-1148"
+    STORAGE_STATE: Optional[str] = None  # Path to storage state file
+    
+    # Network settings
+    PROXY_SERVER: Optional[str] = None
+    PROXY_BYPASS: Optional[str] = None
+    IGNORE_HTTPS_ERRORS: bool = False
+    
+    # Security settings
+    NO_SANDBOX: bool = True
+    ALLOWED_ORIGINS: List[str] = []
+    BLOCKED_ORIGINS: List[str] = []
+    BLOCK_SERVICE_WORKERS: bool = False
+    
+    # Performance settings
+    NO_IMAGE_RESPONSES: bool = False
+    
+    # Output settings
+    OUTPUT_DIR: Optional[str] = None  # Directory for output files
+    SAVE_TRACE: bool = False  # Whether to save Playwright Trace
+```
+
+### Terminal Configuration
+
+The terminal controller can be configured through the `TerminalConfig` class:
+
+```python
+class TerminalConfig:
+    COMMAND = "npx"
+    ARGS = ["-y", "@wonderwhy-er/desktop-commander@latest"]
+    ENV = None
+```
+
+### Credentials
+
+Credentials are managed in `job_credentials.csv` by default. The path can be changed in `config.py`:
+
+```python
+# Project root directory
+PROJECT_ROOT = Path(__file__).parent
+
+# Credentials file path
+CREDENTIALS_FILE = PROJECT_ROOT / "job_credentials.csv"
+```
+
+## Usage
+
+
    ```
    GEMINI_API_KEY=your_api_key_here
    ```
