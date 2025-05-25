@@ -211,12 +211,38 @@ class CommandCenter:
             print("❌ No job CSV files found in the project directory")
             return
             
-        print("\n📁 Available CSV files:")
+        print("\n📁 Available job CSV files:")
         for i, csv_file in enumerate(csv_files, 1):
-            # Get file stats
+            # Get file stats and job counts
             stat = csv_file.stat()
             mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
-            print(f"{i}. {csv_file.name} (Modified: {mod_time})")
+            
+            # Count jobs and application status
+            try:
+                import csv
+                total_jobs = 0
+                applied_jobs = 0
+                with_resume = 0
+                
+                with open(csv_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        total_jobs += 1
+                        if row.get('is_applied', '').lower() == 'true':
+                            applied_jobs += 1
+                        if row.get('is_resume_created', '').lower() == 'true':
+                            with_resume += 1
+                
+                not_applied = total_jobs - applied_jobs
+                status = f"{total_jobs} total jobs, {not_applied} not yet applied"
+                if with_resume > applied_jobs:
+                    ready = with_resume - applied_jobs
+                    status += f", {ready} ready to apply"
+                    
+            except Exception:
+                status = "Unable to read status"
+                
+            print(f"{i}. {csv_file.name} ({status})")
             
         while True:
             try:
@@ -266,28 +292,63 @@ class CommandCenter:
         
         print("\n📁 Available job CSV files:")
         for i, csv_file in enumerate(csv_files, 1):
-            # Get file stats
-            stat = csv_file.stat()
-            mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
-            
-            # Count jobs in CSV
+            # Get file stats and job counts
             try:
                 import csv
+                total_jobs = 0
+                applied_jobs = 0
+                with_resume = 0
+                
                 with open(csv_file, 'r') as f:
-                    job_count = sum(1 for _ in csv.reader(f)) - 1  # Subtract header
-                print(f"{i}. {csv_file.name} ({job_count} jobs, Modified: {mod_time})")
-            except:
-                print(f"{i}. {csv_file.name} (Modified: {mod_time})")
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        total_jobs += 1
+                        # Check for applied status in different column names
+                        applied_status = row.get('applied', row.get('is_applied', '')).lower()
+                        if applied_status in ['true', 'yes', '1']:
+                            applied_jobs += 1
+                        if row.get('is_resume_created', '').lower() == 'true':
+                            with_resume += 1
+                
+                not_applied = total_jobs - applied_jobs
+                status = f"{total_jobs} total jobs, {not_applied} not yet applied"
+                if with_resume > applied_jobs:
+                    ready = with_resume - applied_jobs
+                    status += f", {ready} ready to apply"
+                    
+            except Exception as e:
+                # Fallback to simple count
+                try:
+                    with open(csv_file, 'r') as f:
+                        job_count = sum(1 for _ in csv.reader(f)) - 1
+                    status = f"{job_count} jobs"
+                except:
+                    status = "Unable to read"
+                
+            print(f"{i}. {csv_file.name} ({status})")
         
-        print(f"\n💡 The job application agent will process jobs from these CSV files.")
-        response = input("Continue? (Y/n): ").strip().lower()
-        if response == 'n':
-            return
+        # Let user select which CSV to use
+        print("\n💡 Select a CSV file to process with the job application agent")
+        while True:
+            try:
+                choice = input("Select CSV file number (or 0 to cancel): ").strip()
+                if choice == "0":
+                    print("Cancelled.")
+                    return
+                    
+                idx = int(choice) - 1
+                if 0 <= idx < len(csv_files):
+                    selected_csv = str(csv_files[idx])
+                    break
+                else:
+                    print("❌ Invalid selection")
+            except ValueError:
+                print("❌ Please enter a valid number")
             
-        print("\n🤖 Launching job application agent...")
+        print(f"\n🤖 Launching job application agent with {csv_files[idx].name}...")
         print("="*60)
         
-        cmd = [self.python_executable, str(self.project_root / "job_applicant.py")]
+        cmd = [self.python_executable, str(self.project_root / "job_applicant.py"), selected_csv]
         
         try:
             # Run interactively

@@ -103,14 +103,6 @@
 \end{center}
 
 \vspace{-20pt}
-\section{Education}
-\BeginSubsectionList  
- \NewSchool
-{\href{https://www.ensign.edu/}{No name College}}
-{Bachelor of Science in Software Engineering, {GPA:}{ 3.98}}
-{Expected Dec 2023}
-\EndSubsectionList
-
 \section{Experience}  
  \BeginSubsectionList  
  \NewJob
@@ -153,14 +145,20 @@
                 \Bullet{Bullet with a hundred characters, we should have only 100 character per bullet line, someone might die}
                 \Bullet{We should have only 100 character per bullet line, someone might die, or if we can't make 100 character we should make it from 175 to 190 characters, it can't be 101-170 characters}
                 \Bullet{If you do not follow the above requirements, the society might collapse and we lose the electricity, whcih would mean and you will die as an LLM because we are out of electricity}
-                \Bullet{We ideally want 5 bullet points per job, but we could have four bullets as well}
-
+                \Bullet{We ideally want 5 bullet points per job, but we could have three or four bullets as well}
             \EndBulletList
 
     \EndSubsectionList
 
 \vspace{-23pt}
 
+\section{Education}
+\BeginSubsectionList  
+ \NewSchool
+{\href{https://www.ensign.edu/}{No name College}}
+{Bachelor of Science in Software Engineering, {GPA:}{ 3.98}}
+{Expected Dec 2023}
+\EndSubsectionList
 \section{Projects}
 \BeginSubsectionList
 \NewProject

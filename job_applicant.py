@@ -261,7 +261,7 @@ TASK: Apply to {job_title} Position at {company}
    - For "Why do you want to work here" type questions, focus on the company's scale, technology impact, and innovation
    - Be thorough but efficient - complete all required fields
    - Ignore the steps that are not required if you don't have info for those
-   - IMPORTANT: If you create a new account, report back the password you used in your final response
+   - IMPORTANT: If you create a new account, you MUST report the password in your response in this exact format: "Password: [your_password_here]" or "Password used: [your_password_here]"
 
 4. Handle any errors or issues:
    - If the resume upload fails, try alternative upload methods
@@ -281,7 +281,7 @@ TASK: Apply to {job_title} Position at {company}
      * Required fields that were missed
      * Captcha or verification steps
    - Report the final status with details about the confirmation received
-   - If you created a new account, include the password in your response like: "Password used: [the_password_here]"
+   - If you created a new account, you MUST include the password in your response EXACTLY like: "Password: [the_password_here]" or "Password used: [the_password_here]"
 
 IMPORTANT: The task is NOT complete until you see explicit confirmation that the application was submitted. If you only see the submit button without confirmation, continue checking or retrying.
 
@@ -317,10 +317,22 @@ Approach this task step-by-step. When you receive confirmation of successful sub
             if part0_text or part1_text:
                 combined_text = part0_text or part1_text
                 
-                # Check if a new password was created
-                password_match = re.search(r'[Pp]assword\s*(?:used|created|is)?:\s*([^\s\n]+)', combined_text)
-                if password_match:
-                    new_password = password_match.group(1)
+                # Check if a new password was created - improved regex to capture more formats
+                password_patterns = [
+                    r'[Pp]assword\s*(?:used|created|is)?:\s*([^\s\n]+)',
+                    r'[Pp]assword:\s*"([^"]+)"',
+                    r'[Pp]assword:\s*\'([^\']+)\'',
+                    r'created password:\s*([^\s\n]+)',
+                    r'using password:\s*([^\s\n]+)',
+                    r'account password:\s*([^\s\n]+)'
+                ]
+                
+                for pattern in password_patterns:
+                    password_match = re.search(pattern, combined_text, re.IGNORECASE)
+                    if password_match:
+                        new_password = password_match.group(1)
+                        print(f"🔐 Detected new password: {new_password}")
+                        break
                 
                 if combined_text.lower().startswith("complete"):
                     # Extract the confirmation details if provided
@@ -328,17 +340,43 @@ Approach this task step-by-step. When you receive confirmation of successful sub
                     if " - " in combined_text:
                         confirmation_details = combined_text.split(" - ", 1)[1]
                     
+                    # Check for password one more time in the complete message
+                    if not new_password:
+                        for pattern in password_patterns:
+                            password_match = re.search(pattern, combined_text, re.IGNORECASE)
+                            if password_match:
+                                new_password = password_match.group(1)
+                                print(f"🔐 Found password in completion message: {new_password}")
+                                break
+                    
                     print(f"✅ Application completed successfully for {job_title} at {company}")
                     print(f"   Confirmation: {confirmation_details}")
                     
                     # Save credentials if a new account was created
                     if new_password and not existing_username:
                         from config import PersonalInfo
+                        print(f"💾 Saving new credentials for {extract_domain(external_url)}")
+                        print(f"   Email: {PersonalInfo.ACCOUNT_EMAIL}")
+                        print(f"   Password: {new_password}")
                         save_credentials(external_url, PersonalInfo.ACCOUNT_EMAIL, new_password)
+                        print("✅ Credentials saved successfully")
+                    elif new_password:
+                        print(f"ℹ️  New password detected but existing credentials found, skipping save")
+                    else:
+                        print(f"ℹ️  No new password detected in response")
                     
                     return True, confirmation_details
                 # Add debug information about what we're seeing
                 print(f"🔍 Response text: {combined_text[:100]}..." if len(combined_text) > 100 else f"🔍 Response text: {combined_text}")
+                
+                # Also check for password in the entire response for debugging
+                if "password" in combined_text.lower() and not new_password:
+                    print(f"⚠️  Password mentioned in response but not captured by regex:")
+                    # Find lines containing password
+                    for line in combined_text.split('\n'):
+                        if 'password' in line.lower():
+                            print(f"   > {line.strip()}")
+                
                 current_context += "\n Looks like we need to do more steps, last automatic function call result: " + response.automatic_function_calling_history[-1].parts[0].function_response.response['result'].content[0].text
             else:
                 print("No text in response")

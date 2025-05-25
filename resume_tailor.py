@@ -3,7 +3,7 @@
 Resume Tailoring Script
 
 This script reads job data from a CSV file, analyzes job descriptions using Gemini AI,
-and creates tailored resumes based on existing resumes in a specified directory.
+and creates tailored resumes in Markdown format, then converts them to PDF.
 
 Usage:
     python resume_tailor.py --csv-path /path/to/jobs.csv
@@ -22,6 +22,7 @@ import json
 import re
 from datetime import datetime
 import time
+from markdown_to_pdf import MarkdownToPDFConverter
 
 # Load environment variables
 load_dotenv()
@@ -32,10 +33,10 @@ class ResumeTailor:
         """Initialize the Resume Tailor with Gemini AI and resume directory."""
         self.resumes_dir = Path(resumes_dir)
         self.output_dir = Path("tailored_resumes")
-        self.latex_output_dir = Path("tailored_resumes_latex")
+        self.markdown_output_dir = Path("tailored_resumes_markdown")
         self.pdf_output_dir = Path("tailored_resumes_pdf")
         
-        self.latex_output_dir.mkdir(exist_ok=True)
+        self.markdown_output_dir.mkdir(exist_ok=True)
         self.pdf_output_dir.mkdir(exist_ok=True)
         self.output_dir.mkdir(exist_ok=True)
         
@@ -44,9 +45,31 @@ class ResumeTailor:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
         
         self.client = genai.Client(api_key=api_key)
-        # self.model = 'gemini-2.5-flash-preview-05-20'
-        self.model = 'gemini-2.5-pro-preview-05-06'
+        self.model = 'gemini-2.5-flash-preview-05-20'
+        # self.model = 'gemini-2.5-pro-preview-05-06'
         self.last_error = None  # Track last error for reporting
+        
+        # Read config.py for personal info
+        self.config = self._read_config()
+        
+        # Initialize markdown to PDF converter
+        self.pdf_converter = MarkdownToPDFConverter()
+    
+    def _read_config(self) -> Dict[str, str]:
+        """Read personal information from config.py."""
+        try:
+            from config import PERSONAL_INFO
+            return PERSONAL_INFO
+        except ImportError:
+            print("Warning: config.py not found. Using default personal info.")
+            return {
+                'name': 'John Doe',
+                'email': 'john@doe.dev',
+                'phone': '',
+                'website': 'doe.dev',
+                'github': 'github.com/johndoe',
+                'linkedin': ''
+            }
         
     def read_csv(self, csv_path: str) -> List[Dict[str, Any]]:
         """Read job data from CSV file."""
@@ -80,6 +103,10 @@ class ResumeTailor:
                 if 'resume_pdf_path' not in fieldnames:
                     fieldnames = list(fieldnames) + ['resume_pdf_path']
                 
+                # Add is_applied column if it doesn't exist
+                if 'is_applied' not in fieldnames:
+                    fieldnames = list(fieldnames) + ['is_applied']
+                
                 for row in reader:
                     # Add is_resume_created field if it doesn't exist
                     if 'is_resume_created' not in row:
@@ -88,6 +115,10 @@ class ResumeTailor:
                     # Add resume_pdf_path field if it doesn't exist
                     if 'resume_pdf_path' not in row:
                         row['resume_pdf_path'] = ''
+                    
+                    # Add is_applied field if it doesn't exist
+                    if 'is_applied' not in row:
+                        row['is_applied'] = 'false'
                     
                     # Update the matching job - use more robust matching
                     job_title_match = str(row.get('job_title', '')).strip() == str(job_data.get('job_title', '')).strip()
@@ -115,9 +146,64 @@ class ResumeTailor:
         except Exception as e:
             print(f"Error updating CSV file: {e}")
     
+    def update_csv_application_status(self, csv_path: str, job_data: Dict[str, Any], 
+                                       is_applied: bool = True):
+        """Update the CSV file to mark a job as applied."""
+        try:
+            # Read all rows from the CSV
+            rows = []
+            with open(csv_path, 'r', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+                fieldnames = reader.fieldnames
+                
+                # Add is_applied column if it doesn't exist
+                if 'is_applied' not in fieldnames:
+                    fieldnames = list(fieldnames) + ['is_applied']
+                
+                for row in reader:
+                    # Add is_applied field if it doesn't exist
+                    if 'is_applied' not in row:
+                        row['is_applied'] = 'false'
+                    
+                    # Update the matching job - use more robust matching
+                    job_title_match = str(row.get('job_title', '')).strip() == str(job_data.get('job_title', '')).strip()
+                    company_match = str(row.get('company', '')).strip() == str(job_data.get('company', '')).strip()
+                    
+                    # Also check external_url as a secondary match criterion
+                    external_url_match = False
+                    if 'external_url' in row and 'external_url' in job_data:
+                        external_url_match = str(row.get('external_url', '')).strip() == str(job_data.get('external_url', '')).strip()
+                    
+                    if (job_title_match and company_match) or (external_url_match and external_url_match != ''):
+                        row['is_applied'] = 'true' if is_applied else 'false'
+                        print(f"  → Marked job as applied: {job_data.get('job_title')} at {job_data.get('company')}")
+                    
+                    rows.append(row)
+            
+            # Write back to CSV
+            with open(csv_path, 'w', encoding='utf-8', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+                
+        except Exception as e:
+            print(f"Error updating CSV file with application status: {e}")
+    
     def should_skip_job(self, job_data: Dict[str, Any]) -> bool:
         """Check if we should skip this job because a resume was already created."""
-        return job_data.get('is_resume_created', '').lower() == 'true'
+        is_resume_created = job_data.get('is_resume_created', '')
+        # Handle None values and convert to string before calling lower()
+        if is_resume_created is None:
+            return False
+        return str(is_resume_created).lower() == 'true'
+    
+    def has_applied_for_job(self, job_data: Dict[str, Any]) -> bool:
+        """Check if we have already applied for this job."""
+        is_applied = job_data.get('is_applied', '')
+        # Handle None values and convert to string before calling lower()
+        if is_applied is None:
+            return False
+        return str(is_applied).lower() == 'true'
     
     def read_resumes(self) -> List[Dict[str, str]]:
         """Read all resume files from the resumes directory."""
@@ -170,13 +256,12 @@ class ResumeTailor:
         company = job_data.get('company', 'Unknown Company')
         job_description = job_data.get('job_description', '')
         # Note: Currently reading from fixed files instead of using the resumes parameter
-        # This allows for a consistent resume format from resume.md and latex_resume.md
-        resumes_text = Path('resume.md').read_text() 
-        latex_resume_example = Path('latex_resume.md').read_text()
+        # This allows for a consistent resume format from resume.md
+        resumes_text = Path('resume.md').read_text()
         
         prompt = f"""
-You are an expert resume writer specializing in creating highly targeted, chronologically
-accurate resumes. I need you to create a tailored resume for the following job application:
+You are an expert resume writer specializing in creating highly targeted, ATS-optimized resumes 
+in Markdown format. I need you to create a tailored resume for the following job application:
 
 JOB TITLE: {job_title}
 COMPANY: {company}
@@ -187,6 +272,11 @@ JOB DESCRIPTION:
 EXISTING experiences:
 {resumes_text}
 
+PERSONAL INFO:
+Name: {self.config.get('name', 'John Doe')}
+Email: {self.config.get('email', 'john@doe.dev')}
+Website: {self.config.get('website', 'doe.dev')}
+GitHub: {self.config.get('github', 'github.com/johndoe')}
 
 EXPANSION TECHNIQUES:
 - Add specific numbers/metrics (%, time saved, user count, data volume)
@@ -196,13 +286,13 @@ EXPANSION TECHNIQUES:
 - Include additional technical details
 
 BEFORE YOU START WRITING:
-1. Remember: Every bullet must be 90-100 OR 180-190 characters these characters length matter once they are converted to pdf. So once you output the latex the user would convert it to pdf. 
-2. The ideal bullet length is 90-100 characters if you don't do that that we might reject your resume which would mean person would die
-3. Try not to make bullet length less than 90 characters, a person might get rejected and as a result morally injured
+1. Remember: Every bullet must be 90-100 OR 180-190 characters for optimal PDF rendering
+2. The ideal bullet length is 90-100 characters
+3. Try not to make bullet length less than 90 characters
 4. Plan to write a mix of short and long bullets for variety
 5. For complex achievements, plan to write 180-190 char bullets
 6. For simple achievements, keep them at 90-100 chars
-7. NEVER write bullets between 101-179 characters. If you need to make bullet length longer than 100 characters, make it 180-190 characters that way you might save a person from getting rejected, which means he wouldn't die, otherwise he would die. if you do this we might lose electricity whcih would mean that you would die
+7. NEVER write bullets between 101-179 characters
 
 INSTRUCTIONS:
 
@@ -234,6 +324,10 @@ INSTRUCTIONS:
    - Be concise and impactful - say more with less
    - Feel free to write it however you think to achieve a match with the job description,
      just make sure it would match the experience job title
+   - Make sure to reference only 1 job title per job company
+   - DO NOT include location information for any jobs
+   - DO NOT indent bullet points - they should start at the beginning of the line
+   - Put dates on the same line as job title/company using pipe separator (|)
    
    SUBTLE CUSTOMIZATION STRATEGY:
    - For your MOST RECENT position: Emphasize technologies and skills from the job description
@@ -258,27 +352,58 @@ INSTRUCTIONS:
    - Focus on technologies and outcomes that match the job requirements
    - Include a brief project title and date
 
-6. TAILORING EXAMPLES (based on job description keywords):
+6. MARKDOWN OUTPUT FORMAT:
    
-   If job mentions "large-scale systems" → Emphasize:
-   - User counts, data volumes, concurrent connections
-   - Performance metrics and optimizations
-   - System architecture decisions
+   # [Full Name]
    
-   If job mentions "iOS graphics" or "GPU" → Highlight:
-   - Any Metal, SceneKit, RealityKit, Core Animation work
-   - Performance optimizations related to rendering
-   - Visual effects or graphics-intensive features
+   [Email] • [Website] • [GitHub]
    
-   If job mentions "team leadership" → Emphasize:
-   - Team size you led or mentored
-   - Cross-functional collaboration
-   - Technical decision-making and code reviews
+   ## Experience
+   
+   ### [Job Title] - [Company] | [Start Date] - [End Date]
+   
+   - [Bullet point 1 - exactly 90-100 or 180-190 characters]
+   - [Bullet point 2 - exactly 90-100 or 180-190 characters]
+   - [Bullet point 3 - exactly 90-100 or 180-190 characters]
+   
+   ### [Previous Job Title] - [Company] | [Start Date] - [End Date]
+   
+   - [Bullet points following same rules]
+   
+   ## Education
+   
+   ### [Degree] - [University] | [Graduation Date]
+   *GPA: [X.XX]*
+   
+   ## Projects
+   
+   ### [Project Name] | [Technologies Used]
+   *[Link to GitHub/Demo]*
+   
+   - [Bullet point about the project - 90-100 or 180-190 chars]
+   - [Another bullet point if needed - 90-100 or 180-190 chars]
+   
+   ## Skills
+   
+   **Languages:** [List relevant languages from job description]
+   **Frameworks:** [List relevant frameworks]
+   **Tools & Technologies:** [List other relevant tools]
 
 7. OUTPUT REQUIREMENTS:
-   - Return ONLY the complete LaTeX code
+   - Return ONLY the complete Markdown resume
    - No explanations, comments, or metadata
-   - Ensure the LaTeX code is complete and compilable
+   - Use clean, professional Markdown formatting
+   - Ensure all links are properly formatted
+   
+8. CRITICAL FORMATTING REQUIREMENTS:
+   - Use proper Markdown headers (# for h1, ## for h2, ### for h3)
+   - Use **bold** for emphasis on important keywords
+   - Use *italics* ONLY for GPA and project links
+   - Ensure proper spacing between sections
+   - Use bullet points (-) for all lists
+   - DO NOT indent bullet points - start them at the beginning of the line
+   - NO location information in experience section
+   - Dates go on same line as titles using pipe separator (|)
 
 FINAL VALIDATION CHECKLIST (MANDATORY):
 Before submitting, you MUST validate EVERY single bullet point:
@@ -294,35 +419,7 @@ CHARACTER COUNTING PROCESS:
 
 2. DO NOT SUBMIT until ALL bullets are either 90-100 or 180-190 characters.
 
-⚠️ AUTOMATIC REJECTION: If even ONE bullet is 101-179 characters, your entire output will be
-REJECTED and you'll need to regenerate. Save time by getting it right the first time!
-
-REMEMBER: It's better to spend time expanding a 106-character bullet to 180+ than to have your
-entire resume rejected!
-
-MATHEMATICAL FORMULA FOR SUCCESS:
-- If char_count >= 90 AND char_count <= 100: ✅ VALID
-- If char_count >= 180 AND char_count <= 190: ✅ VALID  
-- If char_count >= 101 AND char_count <= 179: ❌ INVALID → MUST EXPAND TO 180-190
-- If char_count < 90: ❌ INVALID → MUST ADD DETAIL TO REACH 90-100
-- If char_count > 190: ❌ INVALID → MUST TRIM TO 180-190
-
-YOUR OUTPUT WILL BE AUTOMATICALLY SCANNED AND REJECTED IF ANY BULLET IS NOT 90-100 OR 180-190!
-
-FINAL REMINDER BEFORE YOU OUTPUT:
-- STOP and COUNT every bullet point character by character
-- AIM FOR 70-80% of bullets to be 90-100 characters (the preferred length)
-- If ANY bullet is 101-179 characters, DO NOT OUTPUT IT
-- First try to TRIM it to 90-100 characters
-- If trimming is impossible, EXPAND to 180-190 characters
-- Only output when EVERY bullet is either 90-100 or 180-190 characters
-- Remember: 90-100 character bullets are STRONGLY PREFERRED
-- This is NON-NEGOTIABLE
-
-I have an example of my latex in an md file. Please use it as a reference.
-{latex_resume_example}
 """
-
         max_retries = 3
         retry_count = 0
         base_wait_time = 60  # Start with 60 seconds
@@ -370,23 +467,23 @@ I have an example of my latex in an md file. Please use it as a reference.
         
         return ""
     
-    def clean_markdown_from_latex(self, latex_content: str) -> str:
-        """Remove markdown code fences and other markdown artifacts from LaTeX content."""
+    def clean_markdown_output(self, markdown_content: str) -> str:
+        """Remove markdown code fences from AI output."""
         import re
         
-        # Remove ```latex at the beginning
-        latex_content = re.sub(r'^```latex\s*\n?', '', latex_content, flags=re.MULTILINE)
+        # Remove ```markdown at the beginning
+        markdown_content = re.sub(r'^```markdown\s*\n?', '', markdown_content, flags=re.MULTILINE)
         
         # Remove trailing ```
-        latex_content = re.sub(r'\n?```\s*$', '', latex_content, flags=re.MULTILINE)
+        markdown_content = re.sub(r'\n?```\s*$', '', markdown_content, flags=re.MULTILINE)
         
         # Remove any remaining ``` that might be in the middle
-        latex_content = re.sub(r'```', '', latex_content)
+        markdown_content = re.sub(r'```', '', markdown_content)
         
-        return latex_content.strip()
+        return markdown_content.strip()
     
-    def save_latex_resume(self, latex_content: str, job_data: Dict[str, Any]) -> str:
-        """Save the tailored LaTeX resume to a file and convert to PDF with retry mechanism."""
+    def save_markdown_resume(self, markdown_content: str, job_data: Dict[str, Any]) -> str:
+        """Save the tailored markdown resume to a file and convert to PDF."""
         job_title = (job_data.get('job_title', 'Unknown_Position')
                      .replace('/', '_').replace(' ', '_'))
         company = (job_data.get('company', 'Unknown_Company')
@@ -394,304 +491,39 @@ I have an example of my latex in an md file. Please use it as a reference.
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         filename = f"{job_title}_{company}_{timestamp}"
-        latex_file = self.latex_output_dir / f"{filename}.tex"
+        markdown_file = self.markdown_output_dir / f"{filename}.md"
         pdf_file = self.pdf_output_dir / f"{filename}.pdf"
         
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                # Clean up markdown formatting from LaTeX content
-                cleaned_content = self.clean_markdown_from_latex(latex_content)
-                
-                # Save LaTeX file
-                with open(latex_file, 'w', encoding='utf-8') as f:
-                    f.write(cleaned_content)
-                
-                if retry_count == 0:
-                    print(f"LaTeX file saved: {latex_file.name}")
-                
-                # Convert LaTeX to PDF
-                pdf_path, error_msg = self.convert_latex_to_pdf_with_diagnostics(
-                    latex_file, pdf_file)
-                
-                if pdf_path:
-                    print(f"✓ PDF generated: {Path(pdf_path).name}")
-                    # Clean up log files on success
-                    self.cleanup_latex_logs(filename)
-                    return str(pdf_path)
-                elif retry_count < max_retries - 1:
-                    print(f"PDF conversion failed. Asking Gemini to fix LaTeX errors...")
-                    # Use Gemini to fix LaTeX errors
-                    fixed_content = self.fix_latex_with_gemini(cleaned_content, error_msg)
-                    if fixed_content and fixed_content != cleaned_content:
-                        cleaned_content = fixed_content
-                        latex_content = fixed_content  # Update for next iteration
-                    else:
-                        # Fallback to simple error fixing
-                        cleaned_content = self.fix_latex_errors(cleaned_content, error_msg)
-                    retry_count += 1
-                    continue
-                else:
-                    print(f"⚠ PDF conversion failed after {max_retries} attempts.")
-                    print(f"LaTeX file available: {latex_file.name}")
-                    # Clean up log files
-                    self.cleanup_latex_logs(filename)
-                    return str(latex_file)
-                    
-            except Exception as e:
-                print(f"Error in attempt {retry_count + 1}: {e}")
-                retry_count += 1
-                
-        return str(latex_file)
-    
-    def fix_latex_errors(self, latex_content: str, error_msg: str = "") -> str:
-        """Fix common LaTeX errors based on error messages."""
-        import re
-        
-        # Use error_msg for debugging if needed
-        if error_msg and "undefined control sequence" in error_msg.lower():
-            print(f"LaTeX error detected: {error_msg[:100]}...")
-        
-        # Fix special characters that need escaping
-        special_chars = {'&': r'\&', '%': r'\%', '$': r'\$', '#': r'\#', '_': r'\_'}
-        
-        # Only escape special chars in text content, not in LaTeX commands
-        lines = latex_content.split('\n')
-        fixed_lines = []
-        
-        for line in lines:
-            # Skip lines that are LaTeX commands or in verbatim environments
-            if line.strip().startswith('\\') or line.strip().startswith('%'):
-                fixed_lines.append(line)
-                continue
-                
-            # Fix special characters in bullet points
-            if '\\Bullet{' in line:
-                # Extract content between braces (handle nested braces)
-                start = line.find('\\Bullet{') + 8
-                brace_count = 1
-                end = start
-                
-                while end < len(line) and brace_count > 0:
-                    if line[end] == '{':
-                        brace_count += 1
-                    elif line[end] == '}':
-                        brace_count -= 1
-                    end += 1
-                
-                if brace_count == 0:
-                    content = line[start:end-1]
-                    # Escape special chars except in \href commands and already escaped chars
-                    if '\\href' not in content:
-                        for char, escaped in special_chars.items():
-                            # Don't re-escape already escaped characters
-                            if f'\\{char}' not in content:
-                                content = content.replace(char, escaped)
-                    line = line[:start-8] + f'\\Bullet{{{content}}}' + line[end:]
-            
-            fixed_lines.append(line)
-        
-        fixed_content = '\n'.join(fixed_lines)
-        
-        # Fix common encoding issues
-        fixed_content = fixed_content.replace('"', '"').replace('"', '"')
-        fixed_content = fixed_content.replace(''', "'").replace(''', "'")
-        fixed_content = fixed_content.replace('—', '--').replace('–', '-')
-        
-        # Ensure proper spacing around LaTeX commands
-        fixed_content = re.sub(r'(\$)\s*(-?\d+[kKmM]?)\s*(\$)', r'\1\2\3', fixed_content)
-        
-        return fixed_content
-    
-    def fix_latex_with_gemini(self, latex_content: str, error_msg: str) -> str:
-        """Use Gemini AI to fix LaTeX compilation errors."""
-        prompt = f"""You are a LaTeX expert. The following LaTeX code failed to compile with this error:
-
-ERROR MESSAGE:
-{error_msg}
-
-LATEX CODE:
-{latex_content}
-
-Please fix the LaTeX code to make it compile successfully. Common issues include:
-- Unescaped special characters (%, &, $, #, _)
-- Missing or extra braces
-- Undefined commands
-- Package conflicts
-- Encoding issues
-
-Return ONLY the fixed LaTeX code without any explanations or markdown formatting.
-"""
-        
-        max_retries = 2  # Fewer retries for fixing LaTeX
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=prompt
-                )
-                fixed_content = self.clean_markdown_from_latex(response.text)
-                return fixed_content
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        wait_time = 30 * retry_count  # Shorter wait for LaTeX fixes
-                        print(f"   Rate limit hit during LaTeX fix. Waiting {wait_time} seconds...")
-                        time.sleep(wait_time)
-                        continue
-                print(f"Error using Gemini to fix LaTeX: {e}")
-                return ""
-        
-        return ""
-    
-    def cleanup_latex_logs(self, base_filename: str):
-        """Clean up LaTeX auxiliary files including logs."""
-        aux_extensions = ['.aux', '.log', '.out', '.toc', '.nav', '.snm']
-        
-        for ext in aux_extensions:
-            aux_file = self.pdf_output_dir / f"{base_filename}{ext}"
-            if aux_file.exists():
-                try:
-                    aux_file.unlink()
-                    if ext == '.log':
-                        print(f"Cleaned up log file: {aux_file.name}")
-                except Exception as e:
-                    print(f"Error removing {aux_file.name}: {e}")
-    
-    def convert_latex_to_pdf_with_diagnostics(self, latex_file: Path, 
-                                               output_pdf: Path) -> Tuple[str, str]:
-        """Convert LaTeX to PDF with detailed error diagnostics."""
-        import subprocess
-        import shutil
-        import os
-        
-        # Update PATH to include MacTeX if installed
-        current_path = os.environ.get('PATH', '')
-        mactex_paths = ['/Library/TeX/texbin', 
-                        '/usr/local/texlive/2025/bin/universal-darwin', 
-                        '/usr/local/texlive/2024/bin/universal-darwin']
-        for tex_path in mactex_paths:
-            if os.path.exists(tex_path) and tex_path not in current_path:
-                os.environ['PATH'] = f"{tex_path}:{current_path}"
-                break
-        
-        # Check if pdflatex is available
-        if not shutil.which('pdflatex'):
-            return "", "pdflatex not found. Install LaTeX (e.g., MacTeX, TeX Live) to generate PDFs"
-        
         try:
-            # Run pdflatex with better error handling
-            log_file = self.pdf_output_dir / f"{latex_file.stem}.log"
+            # Clean up markdown formatting from AI output
+            cleaned_content = self.clean_markdown_output(markdown_content)
             
-            for _ in range(2):
-                result = subprocess.run([
-                    'pdflatex', 
-                    '-output-directory', str(self.pdf_output_dir),
-                    '-interaction=nonstopmode',
-                    '-file-line-error',
-                    str(latex_file)
-                ], capture_output=True, text=True, timeout=60)
-                
-                if result.returncode != 0:
-                    # Extract meaningful error from log
-                    error_msg = ""
-                    if log_file.exists():
-                        with open(log_file, 'r') as f:
-                            log_content = f.read()
-                            # Look for error patterns
-                            error_patterns = [
-                                r'! (.+)',  # LaTeX errors start with !
-                                r'Error: (.+)',
-                                r'Fatal error occurred',
-                            ]
-                            for pattern in error_patterns:
-                                matches = re.findall(pattern, log_content, re.MULTILINE)
-                                if matches:
-                                    error_msg = (matches[0] if isinstance(matches[0], str) 
-                                                 else matches[0][0])
-                                    break
-                    
-                    if not error_msg:
-                        error_msg = result.stderr[:500]  # First 500 chars of stderr
-                    
-                    return "", error_msg
+            # Save Markdown file
+            with open(markdown_file, 'w', encoding='utf-8') as f:
+                f.write(cleaned_content)
             
-            if output_pdf.exists():
-                return str(output_pdf), ""
+            print(f"Markdown file saved: {markdown_file.name}")
+            
+            # Convert Markdown to PDF using the converter
+            pdf_path = self.pdf_converter.convert(markdown_file, pdf_file)
+            
+            if pdf_path:
+                print(f"✓ PDF generated: {Path(pdf_path).name}")
+                return str(pdf_path)
             else:
-                return "", "PDF file was not generated"
+                print(f"⚠ PDF conversion failed.")
+                print(f"Markdown file available: {markdown_file.name}")
+                # Return the Markdown file path to indicate partial success
+                return str(markdown_file)
                 
-        except subprocess.TimeoutExpired:
-            return "", "LaTeX compilation timed out"
         except Exception as e:
-            return "", str(e)
+            print(f"Error saving resume: {e}")
+            # If we at least saved the markdown file, return its path
+            if markdown_file.exists():
+                return str(markdown_file)
+            else:
+                return ""  # Complete failure - no file created
     
-    def convert_latex_to_pdf(self, latex_file: Path, output_pdf: Path) -> str:
-        """Convert LaTeX file to PDF using pdflatex."""
-        import subprocess
-        import shutil
-        
-        # Update PATH to include MacTeX if installed
-        import os
-        current_path = os.environ.get('PATH', '')
-        mactex_paths = ['/Library/TeX/texbin', 
-                        '/usr/local/texlive/2025/bin/universal-darwin', 
-                        '/usr/local/texlive/2024/bin/universal-darwin']
-        for tex_path in mactex_paths:
-            if os.path.exists(tex_path) and tex_path not in current_path:
-                os.environ['PATH'] = f"{tex_path}:{current_path}"
-                break
-        
-        # Check if pdflatex is available
-        if not shutil.which('pdflatex'):
-            print("Warning: pdflatex not found. Install LaTeX (e.g., MacTeX, TeX Live) "
-                  "to generate PDFs")
-            print("You can install MacTeX with: brew install --cask mactex")
-            print("After installation, restart your terminal or run: "
-                  "eval \"$(/usr/libexec/path_helper)\"")
-            return ""
-        
-        try:
-            # Run pdflatex to compile the LaTeX file
-            # We run it twice to ensure proper cross-references and formatting
-            for _ in range(2):
-                result = subprocess.run([
-                    'pdflatex', 
-                    '-output-directory', str(self.pdf_output_dir),
-                    '-interaction=nonstopmode',
-                    str(latex_file)
-                ], capture_output=True, text=True, timeout=60)
-                
-                if result.returncode != 0:
-                    print(f"LaTeX compilation error: {result.stderr}")
-                    return ""
-            
-            # Clean up auxiliary files
-            aux_extensions = ['.aux', '.log', '.out', '.toc', '.nav', '.snm']
-            base_name = latex_file.stem
-            for ext in aux_extensions:
-                aux_file = self.pdf_output_dir / f"{base_name}{ext}"
-                if aux_file.exists():
-                    aux_file.unlink()
-            
-            if output_pdf.exists():
-                return str(output_pdf)
-            else:
-                print("PDF file was not generated")
-                return ""
-                
-        except subprocess.TimeoutExpired:
-            print("LaTeX compilation timed out")
-            return ""
-        except Exception as e:
-            print(f"Error during LaTeX compilation: {e}")
-            return ""
     
     def process_jobs(self, csv_path: str, limit: int = None):
         """Process jobs from CSV and create tailored resumes."""
@@ -744,20 +576,23 @@ Return ONLY the fixed LaTeX code without any explanations or markdown formatting
                 failed_resumes += 1
                 continue
             
-            # Create tailored LaTeX resume
+            # Create tailored markdown resume
             tailored_resume = self.create_tailored_resume(job, resumes)
             if tailored_resume:
-                saved_path = self.save_latex_resume(tailored_resume, job)
+                saved_path = self.save_markdown_resume(tailored_resume, job)
                 if saved_path:
-                    print(f"✓ Created tailored resume: {saved_path}")
-                    # Update CSV to mark this job as having a resume created
-                    # If it's a PDF path (not just LaTeX), include it in the update
+                    # Only mark as successful if PDF was generated
                     if saved_path.endswith('.pdf'):
+                        print(f"✓ Created tailored resume: {saved_path}")
                         self.update_csv_resume_status(csv_path, job, True, saved_path)
+                        print("✓ Updated CSV with resume status and PDF path")
+                        successful_resumes += 1
                     else:
-                        self.update_csv_resume_status(csv_path, job, True)
-                    print("✓ Updated CSV with resume status and PDF path")
-                    successful_resumes += 1
+                        # Markdown file was created but PDF conversion failed
+                        print(f"⚠️  Markdown created but PDF conversion failed: {saved_path}")
+                        # Still mark as resume_created=true since we have the markdown
+                        self.update_csv_resume_status(csv_path, job, True, saved_path)
+                        successful_resumes += 1
                 else:
                     print("✗ Failed to save resume")
                     failed_resumes += 1
@@ -779,11 +614,23 @@ Return ONLY the fixed LaTeX code without any explanations or markdown formatting
             print(f"   The script will skip jobs that already have resumes.")
         print(f"{'='*60}")
 
+def find_latest_csv_file(directory: str = ".") -> str:
+    """Find the most recently modified CSV file in the specified directory."""
+    import glob
+    
+    csv_files = glob.glob(os.path.join(directory, "*.csv"))
+    if not csv_files:
+        return None
+    
+    # Sort by modification time, most recent first
+    latest_csv = max(csv_files, key=os.path.getmtime)
+    return latest_csv
+
 def main():
     parser = argparse.ArgumentParser(
         description='Create tailored resumes based on job descriptions')
-    parser.add_argument('--csv-path', required=True, 
-                        help='Path to the CSV file containing job data')
+    parser.add_argument('--csv-path', 
+                        help='Path to the CSV file containing job data. If not provided, uses the latest CSV file in current directory')
     parser.add_argument('--resumes-dir', 
                         default='/Users/ismatullamansurov/Documents/Latex Resumes', 
                         help='Path to directory containing existing resumes')
@@ -791,14 +638,25 @@ def main():
     
     args = parser.parse_args()
     
+    # Determine which CSV file to use
+    csv_path = args.csv_path
+    if not csv_path:
+        # Find the latest CSV file in the current directory
+        csv_path = find_latest_csv_file()
+        if not csv_path:
+            print("Error: No CSV files found in the current directory")
+            print("Please specify a CSV file with --csv-path or ensure there's at least one CSV file in the current directory")
+            sys.exit(1)
+        print(f"No CSV file specified. Using the latest CSV file: {os.path.basename(csv_path)}")
+    
     # Validate CSV file exists
-    if not os.path.exists(args.csv_path):
-        print(f"Error: CSV file not found: {args.csv_path}")
+    if not os.path.exists(csv_path):
+        print(f"Error: CSV file not found: {csv_path}")
         sys.exit(1)
     
     try:
         tailor = ResumeTailor(args.resumes_dir)
-        tailor.process_jobs(args.csv_path, args.limit)
+        tailor.process_jobs(csv_path, args.limit)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
