@@ -41,6 +41,7 @@ build/
 *.docx
 .mcp.json
 resume.md
+config.py
 
 # But allow README
 !README.md
