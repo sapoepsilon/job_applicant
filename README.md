@@ -2,6 +2,10 @@
 
 An intelligent browser automation tool that combines Playwright MCP (Model Context Protocol) with Google's Gemini API to automate job applications using natural language instructions.
 
+## DEMO:
+
+https://github.com/user-attachments/assets/b0b8df48-623c-4078-8b94-ad51e95a818d
+
 ## Features
 
 - 🤖 **Natural Language Commands**: Tell the bot what to do in plain English
